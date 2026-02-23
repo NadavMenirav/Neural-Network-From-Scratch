@@ -3,3 +3,4 @@ external
 results/*
 *.dSYM
 .DS_Store
+.idea

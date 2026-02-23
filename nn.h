@@ -4,16 +4,16 @@
 #include <math.h>
 #include <stdio.h>
 #ifndef NN_SAFE_ALLOC
-#define NN_SAFE_ALLOC 1
+#define NN_SAFE_ALLOC 1 // Used to determine whether we want malloc with NULL check or not
 #endif
 
 #include <stdlib.h>
 
 #ifndef NN_MALLOC
 #if NN_SAFE_ALLOC
-#define NN_MALLOC(size) nn_malloc_debug((size), __FILE__, __LINE__)
+#define NN_MALLOC(size) nn_malloc_debug((size), __FILE__, __LINE__) // The safe malloc function
 #else
-#define NN_MALLOC malloc
+#define NN_MALLOC malloc // Regular malloc in case where the NN_SAFE_ALLOC is turned off
 #endif
 #endif
 
@@ -22,13 +22,14 @@
 #define NN_ASSERT assert
 #endif
 
-#define ARRAY_LEN(xs) sizeof((xs))/sizeof((xs[0]))
+#define ARRAY_LEN(xs) sizeof((xs))/sizeof((xs[0])) // Used to calculate the length of arrays
 
-#define NN_MATRIX_AT(m, i, j) (m).data[(i)*(m).stride + (j)]
+#define NN_MATRIX_AT(m, i, j) (m).data[(i)*(m).stride + (j)] // m - matrix, i, j - coordinates
 
-#define NN_INPUTS(nn) (nn).layers[0]
-#define NN_OUTPUTS(nn) (nn).layers[(nn).layers_count - 1]
+#define NN_INPUTS(nn) (nn).layers[0] // Get the input of the neural network
+#define NN_OUTPUTS(nn) (nn).layers[(nn).layers_count - 1] // Get the output of the neural network
 
+// Three activation function are supported in this library
 typedef enum
 {
     ACT_TANH,
@@ -36,11 +37,12 @@ typedef enum
     ACT_RELU
 } NN_ACT;
 
+// Matrix struct is used to represent the input of the network
 typedef struct
 {
     size_t rows;
     size_t cols;
-    size_t stride;
+    size_t stride; // Just the number of elements in a column
     float* data; // contiguous block is easier to re-shape
 } NN_Matrix;
 
@@ -76,7 +78,7 @@ NN_Neuron nn_neuron_init(size_t weights_count);
 void nn_neuron_rand(NN_Neuron* neuron);
 
 NN_Layer nn_layer_init(size_t neurons_count, NN_ACT act_func);
-NN_Layer nn_layer_io_init_from_array(float* activations, size_t activations_count);
+NN_Layer nn_layer_io_init_from_array(const float* activations, size_t activations_count);
 NN_Layer* nn_layer_io_init_from_matrix(NN_Matrix mat);
 
 NN_Network nn_network_init(size_t* architecture, size_t count);
@@ -96,7 +98,11 @@ static void __nn_network_zero(NN_Network nn);
 #ifdef NN_IMPLEMENTATION
 
 #if NN_SAFE_ALLOC
-void* nn_malloc_debug(size_t size, const char* file, int line)
+/*
+ * This function is used whenever the Safe alloc mode is on.
+ * Saves the time of checking if the allocation succeeded or not
+ */
+void* nn_malloc_debug(const size_t size, const char* file, const int line)
 {
     void* ptr = malloc(size);
     if (ptr == NULL)
@@ -108,29 +114,32 @@ void* nn_malloc_debug(size_t size, const char* file, int line)
 }
 #endif
 
-float nn_randf(float min, float max)
+// This function generates a random real number between min and max
+float nn_randf(const float min, const float max)
 {
     NN_ASSERT(min < max);
-    float unit_random = (float)rand() / RAND_MAX;
-    float range_size = max - min;
-    return min + unit_random * range_size;
+    const float unit_random = (float)rand() / RAND_MAX; // Random number between 0 and 1
+    const float range_size = max - min;
+    return min + unit_random * range_size; // Linear interpolation
 }
 #define NN_RANDF() nn_randf(-1.f, 1.f)
 
-float nn_sigmoidf(float x)
+// This function calculates the sigmoid value of x
+float nn_sigmoidf(const float x)
 {
     return 1.f / (1.f + expf(-x));
 }
 
-void nn_matrix_print(NN_Matrix mat)
+// This function receives a matrix and prints it
+void nn_matrix_print(const NN_Matrix mat)
 {
     printf("[\n");
-    for (size_t i = 0; i < mat.rows; ++i)
+    for (size_t i = 0; i < mat.rows; i++)
     {
         printf("\t");
-        for (size_t j = 0; j < mat.cols; ++j)
+        for (size_t j = 0; j < mat.cols; j++)
         {
-            if (j == mat.cols - 1)
+            if (j == mat.cols - 1) // We go down a line
                 printf("%f\n", NN_MATRIX_AT(mat, i, j));
             else
                 printf("%f  ", NN_MATRIX_AT(mat, i, j));
@@ -139,50 +148,58 @@ void nn_matrix_print(NN_Matrix mat)
     printf("]\n");
 }
 
-NN_Neuron nn_neuron_init(size_t weights_count)
+// This function creates a new neuron in the network
+NN_Neuron nn_neuron_init(const size_t weights_count)
 {
     NN_Neuron n;
     n.bias = 0.f;
     n.act = 0.f;
     n.weights_count = weights_count;
-    n.weights = (float*) NN_MALLOC(sizeof(*n.weights) * n.weights_count);
-    for (size_t i = 0; i < n.weights_count; ++i)
+    n.weights = (float*) NN_MALLOC(sizeof(*n.weights) * n.weights_count); // The array of weights
+    for (size_t i = 0; i < n.weights_count; i++)
     {
-        n.weights[i] = 0.f;
+        n.weights[i] = 0.f; // Zeroing the array of weights before filling it with random numbers
     }
 
     return n;
 }
+
+// This function fills the neuron's bias and weights with random numbers to give the network the ability to learn them.
 void nn_neuron_rand(NN_Neuron* neuron)
 {
     neuron->bias = NN_RANDF();
-    for (size_t i = 0; i < neuron->weights_count; ++i)
+    for (size_t i = 0; i < neuron->weights_count; i++)
     {
         neuron->weights[i] = NN_RANDF();
     }
 }
 
-NN_Layer nn_layer_init(size_t neurons_count, NN_ACT act_func)
+// This function initializes a layer in the network
+NN_Layer nn_layer_init(const size_t neurons_count, const NN_ACT act_func)
 {
-    NN_Neuron* neurons = (NN_Neuron*) NN_MALLOC(sizeof(NN_Neuron)*neurons_count);
+    NN_Neuron* neurons = (NN_Neuron*) NN_MALLOC(sizeof(NN_Neuron)*neurons_count); // The array of neurons in the layer
     return (NN_Layer)
     {
-        .act = act_func,
+        .act = act_func, // The activation function is decided on the layer level
         .neurons_count = neurons_count,
         .neurons = neurons
     };
 }
 
-NN_Layer nn_layer_io_init_from_array(float* activations, size_t activations_count)
+// This function creates the first layer of the network. It only represents the input
+NN_Layer nn_layer_io_init_from_array(const float* activations, const size_t activations_count)
 {
     NN_Neuron* neurons = (NN_Neuron*) NN_MALLOC(sizeof(NN_Neuron)*activations_count);
-    NN_Layer layer =
+
+    // Creating the layer, without activation function since it doesn't do any computations
+    const NN_Layer layer =
     {
         .neurons_count = activations_count,
         .neurons = neurons
     };
 
-    for (size_t i = 0; i < activations_count; ++i)
+    // Creating the neurons of this layer
+    for (size_t i = 0; i < activations_count; i++)
     {
         layer.neurons[i] = (NN_Neuron)
         {
@@ -196,20 +213,22 @@ NN_Layer nn_layer_io_init_from_array(float* activations, size_t activations_coun
     return layer;
 }
 
-NN_Layer* nn_layer_io_init_from_matrix(NN_Matrix mat)
+// This function creates an array of 'first layers' for each input in the matrix
+NN_Layer* nn_layer_io_init_from_matrix(const NN_Matrix mat)
 {
-    NN_Layer* layers = (NN_Layer*) NN_MALLOC(sizeof(NN_Layer)*mat.rows);
+    NN_Layer* layers = (NN_Layer*) NN_MALLOC(sizeof(NN_Layer)*mat.rows); // Allocating the layers
 
-    for (size_t i = 0; i < mat.rows; ++i)
+    for (size_t i = 0; i < mat.rows; i++)
     {
-        NN_Neuron* neurons = (NN_Neuron*) NN_MALLOC(sizeof(NN_Neuron)*mat.cols);
+        NN_Neuron* neurons = (NN_Neuron*) NN_MALLOC(sizeof(NN_Neuron)*mat.cols); // Allocating the array of neurons
         layers[i] = (NN_Layer)
         {
             .neurons = neurons,
             .neurons_count = mat.cols
-        };
+        }; // Creating the first layer for the i'th input
 
-        for (size_t j = 0; j < mat.cols; ++j)
+        // Creating the neurons in the layer
+        for (size_t j = 0; j < mat.cols; j++)
         {
             layers[i].neurons[j] = (NN_Neuron)
             {
