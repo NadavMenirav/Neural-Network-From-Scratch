@@ -42,14 +42,14 @@ typedef struct
 {
     size_t rows;
     size_t cols;
-    size_t stride; // Just the number of elements in a column
+    size_t stride; // Just the size of the row
     float* data; // contiguous block is easier to re-shape
 } NN_Matrix;
 
 typedef struct 
 {
     float bias;
-    float act;
+    float act; // The value of the neuron after manipulated by the activatioin function
     size_t weights_count;
     float* weights;
 } NN_Neuron;
@@ -81,11 +81,11 @@ NN_Layer nn_layer_init(size_t neurons_count, NN_ACT act_func);
 NN_Layer nn_layer_io_init_from_array(const float* activations, size_t activations_count);
 NN_Layer* nn_layer_io_init_from_matrix(NN_Matrix mat);
 
-NN_Network nn_network_init(size_t* architecture, size_t count);
+NN_Network nn_network_init(const size_t* layer_sizes, size_t layers_count);
 void nn_network_rand(NN_Network nn);
 void nn_network_forward(NN_Network nn);
 void nn_network_print(NN_Network nn);
-void nn_network_set_input(NN_Network nn, NN_Layer inputs);
+void nn_network_set_input(NN_Network nn, NN_Layer input);
 float nn_network_cost(NN_Network nn, NN_Layer* inputs, NN_Layer* outputs_expected, size_t entries_count);
 void nn_network_finite_differences(NN_Network nn, NN_Network gradient, float epsilon, NN_Layer* inputs, NN_Layer* outputs_expected, size_t entries_count);
 void nn_network_zero_activations(NN_Network gradient);
@@ -244,24 +244,31 @@ NN_Layer* nn_layer_io_init_from_matrix(const NN_Matrix mat)
     return layers;
 }
 
-NN_Network nn_network_init(size_t* layer_sizes, size_t layers_count)
+// This function initializes an entire neural network
+NN_Network nn_network_init(const size_t* layer_sizes, const size_t layers_count)
 {
     NN_Network nn;
 
     nn.layers_count = layers_count;
     nn.layers = (NN_Layer*) NN_MALLOC((layers_count) * sizeof(NN_Layer));
 
+    // Initializing the layers
     for (size_t i = 0; i < nn.layers_count; ++i)
     {
         NN_Layer* l = &nn.layers[i];
-        l->act = ACT_SIG;
+        l->act = ACT_SIG; // For now only supporting sigmoid
         l->neurons_count = layer_sizes[i];
         l->neurons = (NN_Neuron*) NN_MALLOC(l->neurons_count * sizeof(NN_Neuron));
-        size_t neuron_weights_count = (i == 0)
+
+        /* The number of weights there are in the first level is 0 and in any other level is the number of neurons in
+         * the previous layer
+         */
+        const size_t neuron_weights_count = (i == 0)
             ? 0
             : nn.layers[i - 1].neurons_count;
 
-        for (size_t j = 0; j < l->neurons_count; ++j)
+        // Initializing each neuron
+        for (size_t j = 0; j < l->neurons_count; j++)
         {
             l->neurons[j] = nn_neuron_init(neuron_weights_count);
         }
@@ -269,50 +276,78 @@ NN_Network nn_network_init(size_t* layer_sizes, size_t layers_count)
 
     return nn;
 }
-void nn_network_rand(NN_Network nn)
+
+// This function generates random 'starting points' for the neurons weights and biases for them to be able to learn.
+void nn_network_rand(const NN_Network nn)
 {
-    for (size_t i = 1; i < nn.layers_count; ++i)
+    /* Starting from i = 1 because the first layer (which represents the input layer) doesn't have any weights at all,
+     * and we need the bias of the neurons in that layer to stay 0
+     */
+    for (size_t i = 1; i < nn.layers_count; ++i) // Iterating over the layers
     {
-        NN_Layer* l = &nn.layers[i];
-        for (size_t j = 0; j < l->neurons_count; ++j)
+        const NN_Layer* l = &nn.layers[i]; // Easy access to the layer
+
+        // For each neuron in the layer we generate weights and biases using the nn_neuron_rand function
+        for (size_t j = 0; j < l->neurons_count; j++)
         {
             nn_neuron_rand(&l->neurons[j]);
         }
     }
 }
 
-void nn_network_set_input(NN_Network nn, NN_Layer input)
+// This function sets the first layer in the network to be the input
+void nn_network_set_input(const NN_Network nn, const NN_Layer input)
 {
-    NN_Layer input_layer = nn.layers[0];
+    const NN_Layer input_layer = nn.layers[0]; // Easy access to first layer
+
+    // Asserting the number of neurons in the first layer equals to the number of input entries
     NN_ASSERT(input_layer.neurons_count == input.neurons_count);
 
-    for (size_t i = 0; i < input_layer.neurons_count; ++i)
+    // Assigning the input to every neuron in the layer
+    for (size_t i = 0; i < input_layer.neurons_count; i++)
     {
-        NN_Neuron* neuron = &input_layer.neurons[i];
+        NN_Neuron* neuron = &input_layer.neurons[i]; // Easy access to neuron
+
+        // Assigning the input value to the neuron's 'act' parameter - not really passing through any activation func
         neuron->act = input.neurons[i].act;
     }
 }
 
-void nn_network_forward(NN_Network nn)
+// This function performs a forward propagation - calculates the value of the nodes in the network
+void nn_network_forward(const NN_Network nn)
 {
-    __nn_network_zero(nn);
-    for (size_t i = 1; i < nn.layers_count; ++i)
-    {
-        NN_Layer* layer = &nn.layers[i];
-        NN_Layer* layer_prev = &nn.layers[i - 1];
 
-        for (size_t j = 0; j < layer->neurons_count; ++j)
+    // Zeroing the network except for the first layer of the inputs to avoid errors
+    __nn_network_zero(nn);
+
+    /* Iterating over all the layers (except the first one of the inputs) and calculating the value of each neuron
+     * in the network
+     */
+    for (size_t i = 1; i < nn.layers_count; i++)
+    {
+
+        // Easy access
+        const NN_Layer* layer = &nn.layers[i];
+        const NN_Layer* layer_prev = &nn.layers[i - 1];
+
+        // Iterating over all the neurons in the layer
+        for (size_t j = 0; j < layer->neurons_count; j++)
         {
-            NN_Neuron* neuron = &layer->neurons[j];
-            float sum = neuron->bias;
+            NN_Neuron* neuron = &layer->neurons[j]; // Easy access
+            float sum = neuron->bias; // sum will be the new value of the neuron (before the activation func if needed)
+
+            /* Iterating over all the neurons from the previous layer, multiplying their 'act' by the weight our
+             * neuron have in relation to this previous neuron - can be 0
+             */
             for (size_t k = 0; k < neuron->weights_count; ++k)
             {
-                NN_Neuron* neuron_prev = &layer_prev->neurons[k];
+                const NN_Neuron* neuron_prev = &layer_prev->neurons[k];
                 sum += neuron_prev->act * neuron->weights[k];
             }
-            
+
+            // Last layer does not go through the activation function
             neuron->act = (i == nn.layers_count - 1)
-                ? neuron->act = sum
+                ? sum
                 : nn_sigmoidf(sum);
         }
     }
