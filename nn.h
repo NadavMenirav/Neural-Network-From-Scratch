@@ -260,7 +260,8 @@ NN_Network nn_network_init(const size_t* layer_sizes, const size_t layers_count)
         l->neurons_count = layer_sizes[i];
         l->neurons = (NN_Neuron*) NN_MALLOC(l->neurons_count * sizeof(NN_Neuron));
 
-        /* The number of weights there are in the first level is 0 and in any other level is the number of neurons in
+        /*
+         * The number of weights there are in the first level is 0 and in any other level is the number of neurons in
          * the previous layer
          */
         const size_t neuron_weights_count = (i == 0)
@@ -320,7 +321,8 @@ void nn_network_forward(const NN_Network nn)
     // Zeroing the network except for the first layer of the inputs to avoid errors
     __nn_network_zero(nn);
 
-    /* Iterating over all the layers (except the first one of the inputs) and calculating the value of each neuron
+    /*
+     * Iterating over all the layers (except the first one of the inputs) and calculating the value of each neuron
      * in the network
      */
     for (size_t i = 1; i < nn.layers_count; i++)
@@ -353,37 +355,51 @@ void nn_network_forward(const NN_Network nn)
     }
 }
 
-static void __nn_network_zero(NN_Network nn)
+/*
+ * This function is used to zero all the entries in the neural network (except first layer) in order to avoid errors
+ * before propagating.
+ * This is a static function because it is only a helper - we do not allow users to call it
+ */
+static void __nn_network_zero(const NN_Network nn)
 {
-    for (size_t i = 1; i < nn.layers_count; ++i)
+
+    // Starting from i = 1 because we only zero the non-input layers.
+    for (size_t i = 1; i < nn.layers_count; i++)
     {
-        NN_Layer* layer = &nn.layers[i];
-        for (size_t j = 0; j < layer->neurons_count; ++j)
+        const NN_Layer* layer = &nn.layers[i]; // Easy access
+        for (size_t j = 0; j < layer->neurons_count; j++)
         {
-            NN_Neuron* neuron = &layer->neurons[j];
-            neuron->act = 0.f;
+            NN_Neuron* neuron = &layer->neurons[j]; // Easy access
+            neuron->act = 0.f; // Zero the act of the neuron
         }
     }
 }
 
-
-void nn_network_print(NN_Network nn)
+// This function is used to print the entire neural network
+void nn_network_print(const NN_Network nn)
 {
     printf("Neural Network:\n");
 
-    for (size_t i = 0; i < nn.layers_count; ++i)
+    // Iterating over the layers
+    for (size_t i = 0; i < nn.layers_count; i++)
     {
         printf("Layer%lu {\n", i);
-        NN_Layer layer = nn.layers[i];
-        for (size_t j = 0; j < layer.neurons_count; ++j)
+        const NN_Layer layer = nn.layers[i]; //TODO: change to pointer
+
+        // Iterating over the neurons in the current layer
+        for (size_t j = 0; j < layer.neurons_count; j++)
         {
-            NN_Neuron neuron = layer.neurons[j];
+            const NN_Neuron neuron = layer.neurons[j]; //TODO: change to pointer
             printf("\tNeuron%lu {\n", j);
             printf("\t\tact = %f,\n", neuron.act);
             printf("\t\tbias = %f,\n", neuron.bias);
             printf("\t\tweights = [\n");
-            for (size_t k = 0; k < neuron.weights_count; ++k)
+
+            // Iterating over the weights of the neuron in the current layer
+            for (size_t k = 0; k < neuron.weights_count; k++)
             {
+
+                // Distinguish between the last weight and other weights because of the comma.
                 if (k == neuron.weights_count - 1)
                     printf("\t\t\t weight%lu = %f\n", k, neuron.weights[k]);
                 else
