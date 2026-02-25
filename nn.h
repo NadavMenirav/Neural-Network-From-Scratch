@@ -86,8 +86,8 @@ void nn_network_rand(NN_Network nn);
 void nn_network_forward(NN_Network nn);
 void nn_network_print(NN_Network nn);
 void nn_network_set_input(NN_Network nn, NN_Layer input);
-float nn_network_cost(NN_Network nn, NN_Layer* inputs, NN_Layer* outputs_expected, size_t entries_count);
-void nn_network_finite_differences(NN_Network nn, NN_Network gradient, float epsilon, NN_Layer* inputs, NN_Layer* outputs_expected, size_t entries_count);
+float nn_network_cost(NN_Network nn, const NN_Layer* inputs, const NN_Layer* outputs_expected, size_t entries_count);
+void nn_network_finite_differences(NN_Network nn, NN_Network gradient, float epsilon, const NN_Layer* inputs, const NN_Layer* outputs_expected, size_t entries_count);
 void nn_network_zero_activations(NN_Network gradient);
 void nn_network_backpropagation(NN_Network nn, NN_Network gradient, NN_Layer* inputs, NN_Layer* outputs_expected, size_t entries_count);
 void nn_network_learn(NN_Network nn, NN_Network gradient, float learning_rate);
@@ -384,26 +384,26 @@ void nn_network_print(const NN_Network nn)
     for (size_t i = 0; i < nn.layers_count; i++)
     {
         printf("Layer%lu {\n", i);
-        const NN_Layer layer = nn.layers[i]; //TODO: change to pointer
+        const NN_Layer* layer = &nn.layers[i];
 
         // Iterating over the neurons in the current layer
-        for (size_t j = 0; j < layer.neurons_count; j++)
+        for (size_t j = 0; j < layer->neurons_count; j++)
         {
-            const NN_Neuron neuron = layer.neurons[j]; //TODO: change to pointer
+            const NN_Neuron* neuron = &layer->neurons[j];
             printf("\tNeuron%lu {\n", j);
-            printf("\t\tact = %f,\n", neuron.act);
-            printf("\t\tbias = %f,\n", neuron.bias);
+            printf("\t\tact = %f,\n", neuron->act);
+            printf("\t\tbias = %f,\n", neuron->bias);
             printf("\t\tweights = [\n");
 
             // Iterating over the weights of the neuron in the current layer
-            for (size_t k = 0; k < neuron.weights_count; k++)
+            for (size_t k = 0; k < neuron->weights_count; k++)
             {
 
                 // Distinguish between the last weight and other weights because of the comma.
-                if (k == neuron.weights_count - 1)
-                    printf("\t\t\t weight%lu = %f\n", k, neuron.weights[k]);
+                if (k == neuron->weights_count - 1)
+                    printf("\t\t\t weight%lu = %f\n", k, neuron->weights[k]);
                 else
-                    printf("\t\t\t weight%lu = %f,\n", k, neuron.weights[k]);
+                    printf("\t\t\t weight%lu = %f,\n", k, neuron->weights[k]);
             }
             printf("\t\t]\n");
         }
@@ -411,59 +411,89 @@ void nn_network_print(const NN_Network nn)
     }
 }
 
-float nn_network_cost(NN_Network nn, NN_Layer* inputs, NN_Layer* outputs_expected, size_t entries_count)
+// Evaluate the cost function of the network
+float nn_network_cost(const NN_Network nn, const NN_Layer* inputs, const NN_Layer* outputs_expected, const size_t entries_count)
 {
-    float cost = 0.f;
-    for (size_t i = 0; i < entries_count; ++i)
+    float cost = 0.f; // We start with cost = 0 and add to it as needed
+
+    // Iterating over all the different inputs
+    for (size_t i = 0; i < entries_count; i++)
     {
-        float partial_cost = 0.f;
+        float partial_cost = 0.f; // The square errors per input
 
-        NN_Layer input = inputs[i];
-        NN_Layer output = outputs_expected[i];
+        const NN_Layer* input = &inputs[i];
+        const NN_Layer* output = &outputs_expected[i];
 
-        NN_ASSERT(NN_INPUTS(nn).neurons_count == input.neurons_count);
-        NN_ASSERT(NN_OUTPUTS(nn).neurons_count == output.neurons_count);
+        /*
+         * Asserting the number of neurons in the first layer of the network equals to the number of neurons in the
+         * input, and doing the same for the output.
+         */
+        NN_ASSERT(NN_INPUTS(nn).neurons_count == input->neurons_count);
+        NN_ASSERT(NN_OUTPUTS(nn).neurons_count == output->neurons_count);
 
-        nn_network_set_input(nn, input);
+        // Inserting the input to the network and propagating it forward!
+        nn_network_set_input(nn, *input);
         nn_network_forward(nn);
 
-        for (size_t j = 0; j < output.neurons_count; ++j)
+        // Iterating over the neurons in the output to see how far it is from the expected output
+        for (size_t j = 0; j < output->neurons_count; j++)
         {
-            float prediction = NN_OUTPUTS(nn).neurons[j].act;
-            float expected   = output.neurons[j].act;
-            float distance   = prediction - expected;
-            partial_cost     += distance * distance;
+            const float prediction = NN_OUTPUTS(nn).neurons[j].act; // What out network said
+            const float expected   = output->neurons[j].act; // What we expected
+            const float distance   = prediction - expected;
+            partial_cost     += distance * distance; // Adding the distance squared
         }
-        cost += partial_cost; // perhaps we'd want to square it in the future
+        cost += partial_cost; // Adding to the total error
     }
 
-    return cost / entries_count; // taking the avg sum
+    return cost / (float)entries_count; // taking the Mean squared error
 }
 
-void nn_network_finite_differences(NN_Network nn, NN_Network gradient, float epsilon,
-                                 NN_Layer* inputs, NN_Layer* outputs_expected, size_t entries_count)
+/*
+ * This function fills a new neural network which is called gradient. The entries of this network form the gradient of
+ * the cost function.
+ * For example, in the n'th neuron in the m'th level, the value of its k'th weight represents the change in the cost
+ * function. It is the partial derivative of the cost function with respect to the variable which is the k'th weight
+ * of the n'th neuron in the m'th layer (lets denote it by v for now).
+ * The partial derivative is estimated by: (cost(...v + epsilon...) - cost(...v...)) / epsilon)
+ * (We do the same for the biases too)
+ */
+void nn_network_finite_differences(const NN_Network nn, const NN_Network gradient, const float epsilon,
+                                 const NN_Layer* inputs, const NN_Layer* outputs_expected, const size_t entries_count)
 {
-    float cost_original = nn_network_cost(nn, inputs, outputs_expected, entries_count);
+    const float cost_original = nn_network_cost(nn, inputs, outputs_expected, entries_count); // The original cost
 
-    for (size_t i = 0; i < nn.layers_count; ++i)
+
+    for (size_t i = 1; i < nn.layers_count; i++)
     {
-        NN_Layer* l = &nn.layers[i];
-        for (size_t j = 0; j < l->neurons_count; ++j)
+        const NN_Layer* l = &nn.layers[i];
+        for (size_t j = 0; j < l->neurons_count; j++)
         {
             NN_Neuron* neuron = &l->neurons[j];
             float temp;
             float cost_new;
             float partial_derivative;
 
-            for (size_t k = 0; k < neuron->weights_count; ++k)
+            for (size_t k = 0; k < neuron->weights_count; k++)
             {
-                temp = neuron->weights[k];
-                neuron->weights[k] += epsilon;
+                temp = neuron->weights[k]; // Remembering the previous value
+                neuron->weights[k] += epsilon; // Applying the new value to the network
+
+                // The new cost is obtained now by calculating the cost of the changed network
                 cost_new = nn_network_cost(nn, inputs, outputs_expected, entries_count);
+
+                // Calculating the partial derivative using the formula written earlier
                 partial_derivative = (cost_new - cost_original) / epsilon;
+
+                // Filling the gradient network
                 gradient.layers[i].neurons[j].weights[k] = partial_derivative;
+
+                // Back to the original value
                 neuron->weights[k] = temp;
             }
+
+            // Now doing the same for the biases
+
             temp = neuron->bias;
             neuron->bias += epsilon;
             cost_new = nn_network_cost(nn, inputs, outputs_expected, entries_count);

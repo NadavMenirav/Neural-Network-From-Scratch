@@ -42,18 +42,18 @@ int main(void)
         nn_network_learn(nn, gradient, 1e-1);
     }
 
-    //float cost = nn_network_cost(nn, inputs, outputs, in.rows);
-    //printf("Finished training. Cost = %f\n", cost);
-    //printf("Result network: \n");
-    //nn_network_print(nn);
-    //printf("Testing the model: \n");
+    float cost = nn_network_cost(nn, inputs, outputs, in.rows);
+    printf("Finished training. Cost = %f\n", cost);
+    printf("Result network: \n");
+    nn_network_print(nn);
+    printf("Testing the model: \n");
 
-    //for (size_t i = 0; i < in.rows; ++i)
-    //{
-    //    nn_network_set_input(nn, inputs[i]);
-    //    nn_network_forward(nn);
-    //    printf("%f ^ %f = %f\n", inputs[i].neurons[0].act, inputs[i].neurons[1].act, NN_OUTPUTS(nn).neurons[0].act);
-    //}
+    for (size_t i = 0; i < in.rows; ++i)
+    {
+        nn_network_set_input(nn, inputs[i]);
+        nn_network_forward(nn);
+        printf("%f ^ %f = %f\n", inputs[i].neurons[0].act, inputs[i].neurons[1].act, NN_OUTPUTS(nn).neurons[0].act);
+    }
 
     return 0;
 }
