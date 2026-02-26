@@ -531,41 +531,40 @@ void nn_network_backpropagation(const NN_Network nn, const NN_Network gradient, 
         nn_network_set_input(nn, inputs[i]);
         nn_network_forward(nn);
 
-        // l starts at nn.layers_count -1, weird line. Did not want to deal with size_t and int comparisons
-        for (size_t l = nn.layers_count; l-- > 0;)
+        // Now iterating over the neurons in the last layer! We want to see how much our neurons affects it
+        for (size_t j = 0; j < layer_last->neurons_count; j++)
         {
-            const NN_Layer* layer = &nn.layers[l]; // current layer
+            // Initialising dynamic programming
+            nn_network_zero_activations(gradient);
 
             /*
-             * Iterating over the neurons in the current layer. Our goal is to find how much the weights and biases
-             * need to change
+             * The activation of every neuron in the gradient network represents how much it affects the last
+             * layer. The partial derivative of the neurons in the last level with respect to themselves is
+             * of course 1.
+             * This is the base of our dynamic programming
              */
-            for (size_t m = 0; m < layer->neurons_count; m++)
+            for (size_t d = 0; d < layer_last->neurons_count; d++)
             {
-                const NN_Neuron* neuron = &layer->neurons[m]; // The current neuron
+                gradient.layers[gradient.layers_count - 1].neurons[d].act = (d == j)
+                    ? 1.f
+                    : 0.f;
+            }
 
-                // Now iterating over the neurons in the last layer! We want to see how much our neuron affects it
-                for (size_t j = 0; j < layer_last->neurons_count; j++)
+            const float prediction = layer_last->neurons[j].act;
+            const float expected = outputs_expected[i].neurons[j].act;
+
+            // l starts at nn.layers_count -1, weird line. Did not want to deal with size_t and int comparisons
+            for (size_t l = nn.layers_count; l-- > 0;)
+            {
+                const NN_Layer* layer = &nn.layers[l]; // current layer
+
+                /*
+                 * Iterating over the neurons in the current layer. Our goal is to find how much the weights and biases
+                 * need to change
+                 */
+                for (size_t m = 0; m < layer->neurons_count; m++)
                 {
-                    // Initialising dynamic programming
-                    nn_network_zero_activations(gradient);
-
-                    /*
-                     * The activation of every neuron in the gradient network represents how much it affects the last
-                     * layer. The partial derivative of the neurons in the last level with respect to themselves is
-                     * of course 1.
-                     * This is the base of our dynamic programming
-                     */
-                    for (size_t d = 0; d < layer_last->neurons_count; d++)
-                    {
-                        gradient.layers[gradient.layers_count - 1].neurons[d].act = (d == j)
-                            ? 1.f
-                            : 0.f;
-                    }
-
-                    const float prediction = layer_last->neurons[j].act;
-                    const float expected = outputs_expected[i].neurons[j].act;
-
+                    const NN_Neuron* neuron = &layer->neurons[m]; // The current neuron
 
                     // The derivative of the prediction j with respect to the activation of neuron
                     float d_pred_j_d_act = 0.f;
