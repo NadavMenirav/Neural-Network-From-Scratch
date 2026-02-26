@@ -643,27 +643,27 @@ void nn_network_backpropagation(const NN_Network nn, const NN_Network gradient, 
                     }
                     else
                     {
-
-                        // Iterating over the next layer in order to approximate the affect the bias has on that layer
-                        for (size_t t = 0; t < nn.layers[l+1].neurons_count; t++)
-                        {
-
-                            // Activation of the neuron in the next layer
-                            const float act_next = nn.layers[l+1].neurons[t].act;
-
-                            // The t weight of the m neuron in the l + 1 layer
-                            const float weight_m_t = nn.layers[l+1].neurons[t].weights[m];
-
-                            // The derivative of the next neuron with respect to our bias using chain rule
-                            const float d_act_next_d_bias = act_next * (1 - act_next) * weight_m_t *
-                                neuron->act * (1 - neuron->act);
-
-                            // The derivative of the j prediction with respect to the next neuron activation
-                            const float d_pred_j_d_act_next = gradient.layers[l+1].neurons[t].act;
-
-                            // Using chain rule to calculate the derivative of the j prediction with respect to bias
-                            d_pred_j_d_bias += d_pred_j_d_act_next * d_act_next_d_bias;
-                        }
+                        /*
+                         * MASSIVE OPTIMIZATION SHORTCUT
+                         * Originally, we had an entire inner loop here iterating over the NEXT layer
+                         * to calculate how this neuron's bias affects the final prediction.
+                         * BUT, we can skip that loop entirely!
+                         * * Math breakdown using the Chain Rule:
+                         * d_pred_j_d_bias = (d_pred_j_d_act) * (d_act_d_bias)
+                         * * 1. The first part (d_pred_j_d_act) represents the sum of all influences
+                         * this neuron has on the next layer.
+                         * we ALREADY calculated this exact sum a few lines above!
+                         * We did it for the weights and stored it in the variable `d_pred_j_d_act`.
+                         * * 2. The second part (d_act_d_bias) asks: how much does the bias affect
+                         * this neuron's OWN activation?
+                         * Since the activation is a sigmoid function: act = sigmoid(weights*inputs + bias),
+                         * the derivative of the activation with respect to the bias is simply the
+                         * derivative of the sigmoid function itself: act * (1 - act).
+                         * * By multiplying these two parts together, we recycle the heavy mathematical
+                         * lifting we already did. We get the exact same result in O(1) instead of O(N),
+                         * cutting the bias calculation time to a fraction!
+                         */
+                        d_pred_j_d_bias = d_pred_j_d_act * neuron->act * (1 - neuron->act);
                     }
 
                     /*
