@@ -89,7 +89,7 @@ void nn_network_set_input(NN_Network nn, NN_Layer input);
 float nn_network_cost(NN_Network nn, const NN_Layer* inputs, const NN_Layer* outputs_expected, size_t entries_count);
 void nn_network_finite_differences(NN_Network nn, NN_Network gradient, float epsilon, const NN_Layer* inputs, const NN_Layer* outputs_expected, size_t entries_count);
 void nn_network_zero_activations(NN_Network gradient);
-void nn_network_backpropagation(NN_Network nn, NN_Network gradient, NN_Layer* inputs, NN_Layer* outputs_expected, size_t entries_count);
+void nn_network_backpropagation(NN_Network nn, NN_Network gradient, const NN_Layer* inputs, const NN_Layer* outputs_expected, size_t entries_count);
 void nn_network_learn(NN_Network nn, NN_Network gradient, float learning_rate);
 
 static void __nn_network_zero(NN_Network nn);
@@ -504,110 +504,190 @@ void nn_network_finite_differences(const NN_Network nn, const NN_Network gradien
     }
 }
 
-void nn_network_zero_activations(NN_Network gradient)
+// This function zeros the gradient network (used to avoid errors between different inputs)
+void nn_network_zero_activations(const NN_Network gradient)
 {
-    for (size_t l = 0; l < gradient.layers_count; ++l)
+    for (size_t l = 0; l < gradient.layers_count; l++)
     {
         for (size_t m = 0; m < gradient.layers[l].neurons_count; ++m)
             gradient.layers[l].neurons[m].act = 0;
     }
 }
 
-void nn_network_backpropagation(NN_Network nn, NN_Network gradient, NN_Layer* inputs, NN_Layer* outputs_expected, size_t entries_count)
+void nn_network_backpropagation(const NN_Network nn, const NN_Network gradient, const NN_Layer* inputs,
+    const NN_Layer* outputs_expected, const size_t entries_count)
 {
+
+    // Asserting the number of layers in the gradient equals to the number of layers in the original network
     NN_ASSERT(nn.layers_count == gradient.layers_count);
 
-    NN_Layer* layer_last = &NN_OUTPUTS(nn);
-    for (size_t i = 0; i < entries_count; ++i)
+    const NN_Layer* layer_last = &NN_OUTPUTS(nn); // Easy access to the last layer in our original network
+
+    // Iterating over the inputs
+    for (size_t i = 0; i < entries_count; i++)
     {
+
+        // Inserting the input to the network and propagating it forward
         nn_network_set_input(nn, inputs[i]);
         nn_network_forward(nn);
-        for (size_t l = nn.layers_count; l-- > 0;) // l starts at nn.layers_count -1, weird line. Did not want to deal with size_t and int comparisons
+
+        // l starts at nn.layers_count -1, weird line. Did not want to deal with size_t and int comparisons
+        for (size_t l = nn.layers_count; l-- > 0;)
         {
-            NN_Layer* layer = &nn.layers[l];
-            for (size_t m = 0; m < layer->neurons_count; ++m)
+            const NN_Layer* layer = &nn.layers[l]; // current layer
+
+            /*
+             * Iterating over the neurons in the current layer. Our goal is to find how much the weights and biases
+             * need to change
+             */
+            for (size_t m = 0; m < layer->neurons_count; m++)
             {
-                NN_Neuron* neuron = &layer->neurons[m];
-                for (size_t j = 0; j < layer_last->neurons_count; ++j)
+                const NN_Neuron* neuron = &layer->neurons[m]; // The current neuron
+
+                // Now iterating over the neurons in the last layer! We want to see how much our neuron affects it
+                for (size_t j = 0; j < layer_last->neurons_count; j++)
                 {
-                    /*
-                     * Initialising dynamic programming
-                     */
+                    // Initialising dynamic programming
                     nn_network_zero_activations(gradient);
-                    for (size_t d = 0; d < layer_last->neurons_count; ++d)
+
+                    /*
+                     * The activation of every neuron in the gradient network represents how much it affects the last
+                     * layer. The partial derivative of the neurons in the last level with respect to themselves is
+                     * of course 1.
+                     * This is the base of our dynamic programming
+                     */
+                    for (size_t d = 0; d < layer_last->neurons_count; d++)
                     {
                         gradient.layers[gradient.layers_count - 1].neurons[d].act = (d == j)
                             ? 1.f
                             : 0.f;
                     }
 
-                    float prediction = layer_last->neurons[j].act;
-                    float expected = outputs_expected[i].neurons[j].act;
+                    const float prediction = layer_last->neurons[j].act;
+                    const float expected = outputs_expected[i].neurons[j].act;
 
                     /*
-                     * Calculating the derivative of the weights 
+                     * Iterating over the weights of our current neuron in order to check how much it affects the
+                     * neuron j in the last layer
                      */
-                    for (size_t t = 0; t < neuron->weights_count; ++t)
+                    for (size_t t = 0; t < neuron->weights_count; t++)
                     {
+
+                        // Derivative of prediction j with respect to weight t of neuron.
                         float d_pred_j_d_weight = 0.f;
+
+                        // If neuron is from the last layer
                         if (l == nn.layers_count - 1)
                         {
+
+                            /*
+                             * If neuron = prediction, the derivative is exactly the t'th neuron in the previous layer
+                             * otherwise, it is 0.
+                             */
                             d_pred_j_d_weight = (m == j)
                                 ? nn.layers[l-1].neurons[t].act
                                 : 0.f;
 
                         }
+
+                        // If neuron is not from the last layer
                         else
                         {
-                            float d_act_d_weight = nn.layers[l].neurons[m].act * (1 - nn.layers[l].neurons[m].act) * nn.layers[l-1].neurons[t].act;
+                            // The derivative of the activation of neuron with respect to the weight
+                            const float d_act_d_weight = nn.layers[l].neurons[m].act
+                                * (1 - nn.layers[l].neurons[m].act) * nn.layers[l-1].neurons[t].act;
+
+                            // The derivative of the prediction j with respect to the activation of neuron
                             float d_pred_j_d_act = 0.f;
-                            for (size_t k = 0; k < nn.layers[l+1].neurons_count; ++k)
+
+                            // Iterating over the neurons in the NEXT layer (after neuron) in order to use chain rule
+                            for (size_t k = 0; k < nn.layers[l+1].neurons_count; k++)
                             {
-                                float d_pred_j_d_act_next = gradient.layers[l+1].neurons[k].act;
-                                float d_act_next_d_act = nn.layers[l+1].neurons[k].act * (1 - nn.layers[l+1].neurons[k].act) * nn.layers[l+1].neurons[k].weights[m];
+                                // The derivative of prediction j with respect to activation of neuron in next layer
+                                const float d_pred_j_d_act_next = gradient.layers[l+1].neurons[k].act;
+
+                                // The derivative of neuron in next layer with respect to 'neuron'
+                                const float d_act_next_d_act = nn.layers[l+1].neurons[k].act *
+                                    (1 - nn.layers[l+1].neurons[k].act) * nn.layers[l+1].neurons[k].weights[m];
+
+                                // Chain rule
                                 d_pred_j_d_act += d_pred_j_d_act_next * d_act_next_d_act;
                             }
+
+                            // Saving the result in the gradient network
                             gradient.layers[l].neurons[m].act = d_pred_j_d_act;
+
+                            // Using chain rule to calculate the affect the weight has on the prediction
                             d_pred_j_d_weight = d_pred_j_d_act * d_act_d_weight;
                         }
+
+                        /*
+                         * Updating the affect the t weight of m neuron in l level have on the cost function
+                         * Using the derivative of the cost function
+                         */
                         gradient.layers[l].neurons[m].weights[t] += 2 * (prediction - expected) * d_pred_j_d_weight;
                     }
 
-                    /*
-                     * Calculating the derivative of the bias
-                     */
+                    // Calculating the derivative of the bias
                     float d_pred_j_d_bias = 0.f;
+
+                    // If neuron is from the last layer
                     if (l == nn.layers_count - 1)
                     {
+
+                        //If neuron = prediction, the derivative is exactly 1, otherwise, 0
                         d_pred_j_d_bias = (m == j)
                             ? 1.f
                             : 0.f;
                     }
                     else
                     {
-                        for (size_t t = 0; t < nn.layers[l+1].neurons_count; ++t)
+
+                        // Iterating over the next layer in order to approximate the affect the bias has on that layer
+                        for (size_t t = 0; t < nn.layers[l+1].neurons_count; t++)
                         {
-                            float act_next = nn.layers[l+1].neurons[t].act;
-                            float weight_m_t = nn.layers[l+1].neurons[t].weights[m];
-                            float d_act_next_d_bias = act_next * (1 - act_next) * weight_m_t * neuron->act * (1 - neuron->act);
-                            float d_pred_j_d_act_next = gradient.layers[l+1].neurons[t].act;
+
+                            // Activation of the neuron in the next layer
+                            const float act_next = nn.layers[l+1].neurons[t].act;
+
+                            // The t weight of the m neuron in the l + 1 layer
+                            const float weight_m_t = nn.layers[l+1].neurons[t].weights[m];
+
+                            // The derivative of the next neuron with respect to our bias using chain rule
+                            const float d_act_next_d_bias = act_next * (1 - act_next) * weight_m_t *
+                                neuron->act * (1 - neuron->act);
+
+                            // The derivative of the j prediction with respect to the next neuron activation
+                            const float d_pred_j_d_act_next = gradient.layers[l+1].neurons[t].act;
+
+                            // Using chain rule to calculate the derivative of the j prediction with respect to bias
                             d_pred_j_d_bias += d_pred_j_d_act_next * d_act_next_d_bias;
                         }
                     }
+
+                    /*
+                     * Updating the affect the bias of m neuron in l level have on the cost function
+                     * Using the derivative of the cost function
+                     */
                     gradient.layers[l].neurons[m].bias += 2 * (prediction - expected) * d_pred_j_d_bias;
                 }
             }
         }
     }
 
-    for (size_t l = 0; l < gradient.layers_count; ++l)
+    // Iterating over the gradient network and normalizing the result
+    for (size_t l = 0; l < gradient.layers_count; l++)
     {
-        for (size_t m = 0; m < gradient.layers[l].neurons_count; ++m)
+        for (size_t m = 0; m < gradient.layers[l].neurons_count; m++)
         {
-            gradient.layers[l].neurons[m].bias /= entries_count;
-            for (size_t t = 0; t < gradient.layers[l].neurons[m].weights_count; ++t)
+
+            // Dividing by the number of inputs in order for it to really be "Mean Squared Error"
+            gradient.layers[l].neurons[m].bias /= (float)entries_count;
+
+            // Now doing the same for every weight
+            for (size_t t = 0; t < gradient.layers[l].neurons[m].weights_count; t++)
             {
-                gradient.layers[l].neurons[m].weights[t] /= entries_count;
+                gradient.layers[l].neurons[m].weights[t] /= (float)entries_count;
             }
         }
     }
