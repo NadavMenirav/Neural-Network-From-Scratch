@@ -566,6 +566,28 @@ void nn_network_backpropagation(const NN_Network nn, const NN_Network gradient, 
                     const float prediction = layer_last->neurons[j].act;
                     const float expected = outputs_expected[i].neurons[j].act;
 
+
+                    // The derivative of the prediction j with respect to the activation of neuron
+                    float d_pred_j_d_act = 0.f;
+
+                    // Iterating over the neurons in the NEXT layer (after neuron) in order to use chain rule
+                    for (size_t k = 0; k < nn.layers[l+1].neurons_count; k++)
+                    {
+                        // The derivative of prediction j with respect to activation of neuron in next layer
+                        const float d_pred_j_d_act_next = gradient.layers[l+1].neurons[k].act;
+
+                        // The derivative of neuron in next layer with respect to 'neuron'
+                        const float d_act_next_d_act = nn.layers[l+1].neurons[k].act *
+                            (1 - nn.layers[l+1].neurons[k].act) * nn.layers[l+1].neurons[k].weights[m];
+
+                        // Chain rule
+                        d_pred_j_d_act += d_pred_j_d_act_next * d_act_next_d_act;
+                    }
+
+                    // Saving the result in the gradient network
+                    gradient.layers[l].neurons[m].act = d_pred_j_d_act;
+
+
                     /*
                      * Iterating over the weights of our current neuron in order to check how much it affects the
                      * neuron j in the last layer
@@ -596,26 +618,6 @@ void nn_network_backpropagation(const NN_Network nn, const NN_Network gradient, 
                             // The derivative of the activation of neuron with respect to the weight
                             const float d_act_d_weight = nn.layers[l].neurons[m].act
                                 * (1 - nn.layers[l].neurons[m].act) * nn.layers[l-1].neurons[t].act;
-
-                            // The derivative of the prediction j with respect to the activation of neuron
-                            float d_pred_j_d_act = 0.f;
-
-                            // Iterating over the neurons in the NEXT layer (after neuron) in order to use chain rule
-                            for (size_t k = 0; k < nn.layers[l+1].neurons_count; k++)
-                            {
-                                // The derivative of prediction j with respect to activation of neuron in next layer
-                                const float d_pred_j_d_act_next = gradient.layers[l+1].neurons[k].act;
-
-                                // The derivative of neuron in next layer with respect to 'neuron'
-                                const float d_act_next_d_act = nn.layers[l+1].neurons[k].act *
-                                    (1 - nn.layers[l+1].neurons[k].act) * nn.layers[l+1].neurons[k].weights[m];
-
-                                // Chain rule
-                                d_pred_j_d_act += d_pred_j_d_act_next * d_act_next_d_act;
-                            }
-
-                            // Saving the result in the gradient network
-                            gradient.layers[l].neurons[m].act = d_pred_j_d_act;
 
                             // Using chain rule to calculate the affect the weight has on the prediction
                             d_pred_j_d_weight = d_pred_j_d_act * d_act_d_weight;
