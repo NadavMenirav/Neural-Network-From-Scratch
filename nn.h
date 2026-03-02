@@ -514,6 +514,7 @@ void nn_network_zero_activations(const NN_Network gradient)
     }
 }
 
+// Performing backpropagation algorithm and creating the gradient network. See PDF for the math behind this function.
 void nn_network_backpropagation(const NN_Network nn, const NN_Network gradient, const NN_Layer* inputs,
     const NN_Layer* outputs_expected, const size_t entries_count)
 {
@@ -694,22 +695,38 @@ void nn_network_backpropagation(const NN_Network nn, const NN_Network gradient, 
     }
 }
 
-void nn_network_learn(NN_Network nn, NN_Network gradient, float learning_rate)
+// In this function, the neural network actually learns.
+void nn_network_learn(const NN_Network nn, const NN_Network gradient, const float learning_rate)
 {
+
+    // Asserting the number of layers in the neural network equals to the number of layers in the gradient network
     NN_ASSERT(nn.layers_count == gradient.layers_count);
-    for (size_t i = 1; i < nn.layers_count; ++i)
+
+    // Starting from i = 1 because we don't change the first layer as it is the input layer.
+    for (size_t i = 1; i < nn.layers_count; i++)
     {
-        NN_Layer* l = &nn.layers[i];
+        const NN_Layer* l = &nn.layers[i]; // Easy access to current layer
+
+        /*
+         * Asserting the number of neurons in the current layer equals to the number of neurons in the corresponding
+         * layer in the gradient network
+         */
         NN_ASSERT(l->neurons_count == gradient.layers[i].neurons_count);
-        for (size_t j = 0; j < l->neurons_count; ++j)
+
+        // Iterating over the neurons in the current layer
+        for (size_t j = 0; j < l->neurons_count; j++)
         {
-            NN_Neuron* neuron = &l->neurons[j];
-            for (size_t k = 0; k < neuron->weights_count; ++k)
+            NN_Neuron* neuron = &l->neurons[j]; // Easy access to the current neuron
+
+            // Iterating over the weights of the neuron
+            for (size_t k = 0; k < neuron->weights_count; k++)
             {
+
+                // Performing gradient descent
                 neuron->weights[k] -= gradient.layers[i].neurons[j].weights[k] * learning_rate;
             }
             neuron->bias -= gradient.layers[i].neurons[j].bias * learning_rate;
         }
     }
 }
-#endif // NN_IMPLEMNTATION
+#endif // NN_IMPLEMENTATION
