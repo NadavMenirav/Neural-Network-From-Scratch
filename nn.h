@@ -17,6 +17,10 @@
 #endif
 #endif
 
+#ifndef NN_FREE
+#define NN_FREE free
+#endif
+
 #ifndef NN_ASSERT
 #include <assert.h>
 #define NN_ASSERT assert
@@ -91,6 +95,7 @@ void nn_network_finite_differences(NN_Network nn, NN_Network gradient, float eps
 void nn_network_zero_activations(NN_Network gradient);
 void nn_network_backpropagation(NN_Network nn, NN_Network gradient, const NN_Layer* inputs, const NN_Layer* outputs_expected, size_t entries_count);
 void nn_network_learn(NN_Network nn, NN_Network gradient, float learning_rate);
+
 
 static void __nn_network_zero(NN_Network nn);
 
@@ -570,22 +575,28 @@ void nn_network_backpropagation(const NN_Network nn, const NN_Network gradient, 
                     // The derivative of the prediction j with respect to the activation of neuron
                     float d_pred_j_d_act = 0.f;
 
-                    // Iterating over the neurons in the NEXT layer (after neuron) in order to use chain rule
-                    for (size_t k = 0; k < nn.layers[l+1].neurons_count; k++)
-                    {
-                        // The derivative of prediction j with respect to activation of neuron in next layer
-                        const float d_pred_j_d_act_next = gradient.layers[l+1].neurons[k].act;
+                    // We iterate over the next layer so we need to have a next layer
+                    if (l < nn.layers_count - 1) {
 
-                        // The derivative of neuron in next layer with respect to 'neuron'
-                        const float d_act_next_d_act = nn.layers[l+1].neurons[k].act *
-                            (1 - nn.layers[l+1].neurons[k].act) * nn.layers[l+1].neurons[k].weights[m];
+                        // Iterating over the neurons in the NEXT layer (after neuron) in order to use chain rule
+                        for (size_t k = 0; k < nn.layers[l+1].neurons_count; k++)
+                        {
+                            // The derivative of prediction j with respect to activation of neuron in next layer
+                            const float d_pred_j_d_act_next = gradient.layers[l+1].neurons[k].act;
 
-                        // Chain rule
-                        d_pred_j_d_act += d_pred_j_d_act_next * d_act_next_d_act;
+                            // The derivative of the neuron in next layer with respect to 'neuron'
+                            const float d_act_next_d_act = nn.layers[l+1].neurons[k].act *
+                                (1 - nn.layers[l+1].neurons[k].act) * nn.layers[l+1].neurons[k].weights[m];
+
+                            // Chain rule
+                            d_pred_j_d_act += d_pred_j_d_act_next * d_act_next_d_act;
+
+                            // Saving the result in the gradient network
+                            gradient.layers[l].neurons[m].act = d_pred_j_d_act;
+
+                        }
                     }
 
-                    // Saving the result in the gradient network
-                    gradient.layers[l].neurons[m].act = d_pred_j_d_act;
 
 
                     /*
