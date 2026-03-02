@@ -55,5 +55,13 @@ int main(void)
         printf("%f ^ %f = %f\n", inputs[i].neurons[0].act, inputs[i].neurons[1].act, NN_OUTPUTS(nn).neurons[0].act);
     }
 
+    // מנקים את הרשתות
+    nn_free_network(nn);
+    nn_free_network(gradient);
+
+    // מנקים את שכבות הקלט והפלט (שנוצרו מהמטריצות)
+    nn_free_layer_array(inputs, in.rows);
+    nn_free_layer_array(outputs, out.rows);
+
     return 0;
 }

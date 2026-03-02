@@ -95,7 +95,9 @@ void nn_network_zero_activations(NN_Network gradient);
 void nn_network_backpropagation(NN_Network nn, NN_Network gradient, const NN_Layer* inputs, const NN_Layer* outputs_expected, size_t entries_count);
 void nn_network_learn(NN_Network nn, NN_Network gradient, float learning_rate);
 
-void nn_free_layer(NN_Layer* layer);
+void nn_free_layer(NN_Layer layer);
+void nn_free_layer_array(NN_Layer* array, size_t layers_count);
+void nn_free_network(NN_Network nn);
 
 
 static void __nn_network_zero(NN_Network nn);
@@ -729,5 +731,53 @@ void nn_network_learn(const NN_Network nn, const NN_Network gradient, const floa
         }
     }
 }
+
+// This function frees a network layer
+void nn_free_layer(const NN_Layer layer) {
+
+    // Iterating over the neurons in the layer
+    for (size_t i = 0; i < layer.neurons_count; i++) {
+
+        // If the neuron has weights - we free the array of the weights
+        if (layer.neurons[i].weights) {
+            NN_FREE(layer.neurons[i].weights);
+        }
+    }
+
+    // Free the neurons
+    NN_FREE(layer.neurons);
+}
+
+// This function receives an array of layers and frees them and the array
+void nn_free_layer_array(NN_Layer* array, const size_t layers_count) {
+
+    if (!array) return;
+
+    // Iterating over the layers in the array
+    for (size_t i = 0; i < layers_count; i++) {
+
+        // Free the layer
+        nn_free_layer(array[i]);
+    }
+
+    // Free the array of layers
+    NN_FREE(array);
+}
+
+// This function frees an entire neural network
+void nn_free_network(const NN_Network nn) {
+
+    // Iterating over the layers
+    for (size_t i = 0; i < nn.layers_count; i++) {
+
+        // Freeing the current layer
+        nn_free_layer(nn.layers[i]);
+    }
+
+    // Freeing the array of layers
+    NN_FREE(nn.layers);
+}
+
+
 
 #endif // NN_IMPLEMENTATION
