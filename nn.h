@@ -81,11 +81,10 @@ void nn_matrix_print(NN_Matrix mat);
 NN_Neuron nn_neuron_init(size_t weights_count);
 void nn_neuron_rand(NN_Neuron* neuron);
 
-NN_Layer nn_layer_init(size_t neurons_count, NN_ACT act_func);
 NN_Layer nn_layer_io_init_from_array(const float* activations, size_t activations_count);
 NN_Layer* nn_layer_io_init_from_matrix(NN_Matrix mat);
-
 NN_Network nn_network_init(const size_t* layer_sizes, size_t layers_count);
+
 void nn_network_rand(NN_Network nn);
 void nn_network_forward(NN_Network nn);
 void nn_network_print(NN_Network nn);
@@ -95,6 +94,8 @@ void nn_network_finite_differences(NN_Network nn, NN_Network gradient, float eps
 void nn_network_zero_activations(NN_Network gradient);
 void nn_network_backpropagation(NN_Network nn, NN_Network gradient, const NN_Layer* inputs, const NN_Layer* outputs_expected, size_t entries_count);
 void nn_network_learn(NN_Network nn, NN_Network gradient, float learning_rate);
+
+void nn_free_layer(NN_Layer* layer);
 
 
 static void __nn_network_zero(NN_Network nn);
@@ -177,18 +178,6 @@ void nn_neuron_rand(NN_Neuron* neuron)
     {
         neuron->weights[i] = NN_RANDF();
     }
-}
-
-// This function initializes a layer in the network
-NN_Layer nn_layer_init(const size_t neurons_count, const NN_ACT act_func)
-{
-    NN_Neuron* neurons = (NN_Neuron*) NN_MALLOC(sizeof(NN_Neuron)*neurons_count); // The array of neurons in the layer
-    return (NN_Layer)
-    {
-        .act = act_func, // The activation function is decided on the layer level
-        .neurons_count = neurons_count,
-        .neurons = neurons
-    };
 }
 
 // This function creates the first layer of the network. It only represents the input
@@ -740,4 +729,5 @@ void nn_network_learn(const NN_Network nn, const NN_Network gradient, const floa
         }
     }
 }
+
 #endif // NN_IMPLEMENTATION
